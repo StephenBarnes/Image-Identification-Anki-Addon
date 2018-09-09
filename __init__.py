@@ -45,14 +45,32 @@ CARD_1_BACK = """\
 <hr id="answer">
 {{Label}}{{#Search suffix}} ({{Search suffix}}){{/Search suffix}}\
 """
-CARD_1_CSS = ""
+CARD_1_CSS = """\
+.card {
+    text-align: center;
+    font-size: 20px;
+}
+img {
+    margin: 10px;
+    max-height: 600px;
+}\
+"""
 CARD_2_FRONT = """pics: {{Label}}{{#Search suffix}} ({{Search suffix}}){{/Search suffix}}"""
 CARD_2_BACK = """\
 {{FrontSide}}
 <hr id="answer">
 <div id="pictures">{{Image(s)}}\
 """
-CARD_2_CSS = ""
+CARD_2_CSS = """\
+.card {
+    text-align: center;
+    font-size: 20px;
+}
+img {
+    margin: 10px;
+    max-height: 300px;
+}\
+"""
 
 
 class CreateCardsDialog(QDialog):
