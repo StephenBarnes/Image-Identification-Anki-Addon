@@ -33,8 +33,8 @@ MODEL_1_NAME = "Image Identification, 1 picture"
 CARD_1_NAME = "identification, picture -> label"
 MODEL_2_NAME = "Image Identification, all pictures"
 CARD_2_NAME = "description, label -> pictures"
-MODEL_1_FIELDS = ["Label", "Search suffix", "Image(s)"]
-MODEL_2_FIELDS = MODEL_1_FIELDS # they're the same
+MODEL_1_FIELDS = ["Label", "Search suffix", "Image(s)", "Index"]
+MODEL_2_FIELDS = ["Label", "Search suffix", "Other names", "Image(s)", "Index"]
 # Define cards' fronts and backs and CSS
 CARD_1_FRONT = """\
 identify:
@@ -59,6 +59,7 @@ CARD_2_FRONT = """pics: {{Label}}{{#Search suffix}} ({{Search suffix}}){{/Search
 CARD_2_BACK = """\
 {{FrontSide}}
 <hr id="answer">
+{{#Other names}}<div id="other-names">aka: {{Other names}}</div>{{/Other names}}
 <div id="pictures">{{Image(s)}}\
 """
 CARD_2_CSS = """\
@@ -93,6 +94,7 @@ class CreateCardsDialog(QDialog):
 
         self.num_images_input = QSpinBox()
         self.num_images_input.setMinimum(1)
+        self.num_images_input.setValue(6)
         layout.addRow(QLabel("Number of images for each search term:"),
             self.num_images_input)
 
@@ -131,48 +133,67 @@ class CreateCardsDialog(QDialog):
         created."""
         # Create an image->term card for each image
         img_tags = []
-        for temporary_image_path in paths:
-            # add to media folder
-            permanent_path = mw.col.media.addFile(temporary_image_path)
-            img_tag = f'<img src="{permanent_path}" class="image-identification" />'
-            img_tags.append(img_tag)
-            # create the image -> term card
-            note = Note(mw.col, model1)
-            note.model()['did'] = self.deck_chooser.selectedId()
-            note['Label'] = search_term
-            note['Search suffix'] = suffix
-            note['Image(s)'] = img_tag
-            mw.col.addNote(note)
+        for (idx, temporary_image_path) in enumerate(paths, 1):
+            # File might not exist, for various reasons; use try-except to ignore those images
+            try:
+                # add to media folder
+                permanent_path = mw.col.media.addFile(temporary_image_path)
+                img_tag = f'<img src="{permanent_path}" class="image-identification" />'
+                img_tags.append(img_tag)
+                # create the image -> term card
+                note = Note(mw.col, model1)
+                note.model()['did'] = self.deck_chooser.selectedId()
+                note['Label'] = search_term
+                note['Search suffix'] = suffix
+                note['Image(s)'] = img_tag
+                note['Index'] = str(idx)
+                mw.col.addNote(note)
+            except FileNotFoundError as e:
+                print(e)
 
-        # Create term -> all images card
-        note = Note(mw.col, model2)
-        note.model()['did'] = self.deck_chooser.selectedId()
-        note['Label'] = search_term
-        note['Search suffix'] = suffix
-        note['Image(s)'] = ''.join(img_tags)
-        mw.col.addNote(note)
+        # Create term -> all images cards
+        names = [name.strip() for name in search_term.split('/')]
+        for (idx, name) in enumerate(names, 1):
+            other_names = '' if len(names) == 1 else ' / '.join(names[:idx-1] + names[idx:])
+
+            note = Note(mw.col, model2)
+            note.model()['did'] = self.deck_chooser.selectedId()
+            note['Label'] = name
+            note['Search suffix'] = suffix
+            note['Other names'] = other_names
+            note['Image(s)'] = ''.join(img_tags)
+            note['Index'] = str(-idx)
+            mw.col.addNote(note)
 
         # Let changes show
         mw.reset()
 
-        return len(img_tags) + 1
+        return len(img_tags) + len(names)
 
     def fetch_term_images(self, search_term, suffix, num):
         """Fetch all images for a single term, and create notes."""
         num_cards_created = 0
         # Create temporary directory for fetched images
         with tempfile.TemporaryDirectory() as tmpdirname:
-            # Fetch images
-            response = google_images_download.googleimagesdownload()
-            arguments = {
-                "keywords"          : search_term,
-                "limit"             : num,
-                "suffix_keywords"   : suffix,
-                "output_directory"  : tmpdirname,
-                "no_directory"      : True, # place directly in output directory
-                }
-            image_paths = response.download(arguments)
-                # Note: this is a dict from search terms to lists of paths
+            for try_num in (1, 2, 3):
+                # Fetch images
+                response = google_images_download.googleimagesdownload()
+                arguments = {
+                    "keywords"          : search_term,
+                    "limit"             : num,
+                    "suffix_keywords"   : suffix,
+                    "output_directory"  : tmpdirname,
+                    "no_directory"      : True, # place directly in output directory
+                    }
+                image_paths = response.download(arguments)
+                    # Note: this is a dict from search terms to lists of paths
+                assert len(image_paths) == 1
+                key = next(iter(image_paths.keys()))
+                if len(image_paths[key]) == 0:
+                    print("Got zero images on try %d, retrying..." % try_num)
+                    continue
+                else:
+                    break
 
             # Get the two models we'll use
             model1, model2 = getOrCreateModels()
